@@ -4,6 +4,8 @@ import time
 import os
 import random
 from scipy.spatial import distance
+import pickle
+import neat.checkpoint as checkpoint
 
 WIN_WIDTH = 800
 WIN_HEIGHT = 600
@@ -20,7 +22,7 @@ class Bot:
     def __init__(self, x, y, dir):
         self.x = x
         self.y = y
-        self.vel = 1
+        self.vel = 15
         self.hunger = 10
         self.direction = dir
 
@@ -74,9 +76,10 @@ class Food:
 
 def draw_window(win, bots, food):
     win.fill((255,255,255))
-    
     for bot in bots:
         bot.draw(win)
+        distance, index_closest_food = find_closest_food(bot.x, bot.y, food)
+        pygame.draw.line(win, (  0,   0,   0), [bot.x, bot.y] , [food[index_closest_food].x, food[index_closest_food].y] , 5)
 
     for f in food:
         f.draw(win)
@@ -91,12 +94,11 @@ def find_closest_food(curr_x, curr_y, food):
         p2 = (f.x, f.y)
         distance_to_food.append(distance.euclidean(p1, p2))
     
-    return  distance_to_food.index(min(distance_to_food))
+    return min(distance_to_food), distance_to_food.index(min(distance_to_food))
 
 def main(genomes, config):
     nets = []
     ge = []
-    #bots = []
 
     for _, g in genomes:
         net = neat.nn.FeedForwardNetwork.create(g, config)
@@ -104,10 +106,10 @@ def main(genomes, config):
         g.fitness = 0
         ge.append(g)
 
-    bots_x_a = ([10] * 5)
-    bots_x_b = ([740] * 5) 
-    bots_y_a = random.sample(range(10, 550), 5)
-    bots_y_b = random.sample(range(10, 550), 5)
+    bots_x_a = ([10] * 10)
+    bots_x_b = ([740] * 10) 
+    bots_y_a = random.sample(range(10, 550), 10)
+    bots_y_b = random.sample(range(10, 550), 10)
 
     food_x = random.sample(range(100, 700), 10)
     food_y = random.sample(range(100, 500), 10)
@@ -133,8 +135,14 @@ def main(genomes, config):
 
     run = True
 
-    while run:
-        clock.tick(30)
+    time_lapsed = 0
+
+    while run:   
+        time_lapsed += clock.tick(60)
+
+        if time_lapsed > 8000:
+            run = False
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
@@ -142,8 +150,15 @@ def main(genomes, config):
                 quit()
 
         for x, bot in enumerate(bots):
-            index_closest_food = find_closest_food(bot.x, bot.y, food)
-            output = nets[bots.index(bot)].activate((bot.x, bot.y, food[index_closest_food].x, food[index_closest_food].y))
+            if(len(food)):
+                distance, index_closest_food = find_closest_food(bot.x, bot.y, food)
+                output = nets[bots.index(bot)].activate((bot.x, bot.y, bot.x - food[index_closest_food].x, bot.y - food[index_closest_food].y))
+            
+
+            #if x == 0:
+                #print('distance')
+                #print("(" + str(bot.x) + "," + str(bot.y) + ")")
+                #print(distance)
             
             if output[0] > 0.5:
                 bot.up()
@@ -154,19 +169,16 @@ def main(genomes, config):
             if output[3] > 0.5:
                 bot.left()
 
-            print("output: ")
-            print(output)
-
         for x, bot in enumerate(bots):
+            #if(bot.x < 0 or bot.x > WIN_WIDTH or bot.y < 0 or bot.y > WIN_HEIGHT):
+            #    ge[x].fitness -= 5
+
             for y, f in enumerate(food):
                 if f.collide(bot):
-                    ge[x].fitness += 1
+                    ge[x].fitness += 5
                     food.pop(y)
 
         draw_window(win, bots, food)
-
-
-#main()
 
 def run(config_path):
     config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction, 
@@ -179,7 +191,9 @@ def run(config_path):
     stats = neat.StatisticsReporter()
     p.add_reporter(stats)
 
-    winner = p.run(main, 50)
+    winner = p.run(main, 100000)
+
+    with open('model.pkl', 'wb') as output: pickle.dump(winner, output, 1)
 
 if __name__ == "__main__":
     local_dir = os.path.dirname(__file__)
